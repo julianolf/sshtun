@@ -84,6 +84,13 @@ show_version() {
 	exit 0
 }
 
+check_domains() {
+	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
+		echo "error: '$DOMAINS' is either not a regular file or not readable"
+		exit 1
+	fi
+}
+
 main() {
 	parse_args "$@"
 
@@ -96,6 +103,7 @@ main() {
 	fi
 
 	load_config
+	check_domains
 }
 
 main "$@"
