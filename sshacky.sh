@@ -75,20 +75,10 @@ Usage: sshacky [options...]
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
  --version              Show version and exit
 EOF
-
-	exit 0
 }
 
 show_version() {
 	echo "$0 v$VERSION"
-	exit 0
-}
-
-check_domains() {
-	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
-		echo "error: '$DOMAINS' is either not a regular file or not readable"
-		exit 1
-	fi
 }
 
 main() {
@@ -96,14 +86,20 @@ main() {
 
 	if [ "$SHOW_HELP" -eq 1 ]; then
 		show_usage
+		exit 0
 	fi
 
 	if [ "$SHOW_VERSION" -eq 1 ]; then
 		show_version "$0"
+		exit 0
 	fi
 
 	load_config
-	check_domains
+
+	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
+		echo "error: '$DOMAINS' is either not a regular file or not readable"
+		exit 1
+	fi
 }
 
 main "$@"
