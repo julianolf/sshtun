@@ -55,6 +55,13 @@ parse_args() {
 	done
 }
 
+load_config() {
+	if [ -f "$CONFIG" ] && [ -r "$CONFIG" ]; then
+		# shellcheck source=/dev/null
+		source "$CONFIG"
+	fi
+}
+
 show_usage() {
 	cat <<EOF
 Usage: sshacky [options...]
@@ -87,6 +94,8 @@ main() {
 	if [ "$SHOW_VERSION" -eq 1 ]; then
 		show_version "$0"
 	fi
+
+	load_config
 }
 
 main "$@"
