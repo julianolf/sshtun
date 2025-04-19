@@ -12,6 +12,7 @@ SHOW_HELP=0
 SHOW_VERSION=0
 VERSION="0.1.0"
 ACTION=""
+LOG_FILE="/tmp/sshacky-$(date "+%Y%m%d").log"
 
 show_usage() {
 	cat <<EOF
@@ -124,6 +125,7 @@ create_ssh_tunnel() {
 	if ! pgrep -qf "ssh -fN -D $SOCKS_PORT"; then
 		echo "[+] Starting SSH SOCKS5 proxy..."
 		ssh -fN -D "$SOCKS_PORT" "$SSH_HOST"
+		sleep 1
 	else
 		echo "[✓] SSH SOCKS proxy already running."
 	fi
@@ -138,11 +140,45 @@ destroy_ssh_tunnel() {
 	fi
 }
 
+create_tun() {
+	if ! pgrep -qf "nohup tun2socks -device $INTERFACE_NAME"; then
+		echo "[+] Starting tun2socks..."
+		sudo nohup tun2socks \
+			-device "$INTERFACE_NAME" \
+			-proxy "socks5://127.0.0.1:$SOCKS_PORT" \
+			-tun-post-up "ifconfig $INTERFACE_NAME $INTERFACE_IP $INTERFACE_IP up" 2>&1 |
+			tee -a "$LOG_FILE" >/dev/null &
+		sleep 1
+	else
+		echo "[✓] tun2socks already running."
+	fi
+}
+
+destroy_tun() {
+	if ifconfig "$INTERFACE_NAME" 2>/dev/null | grep -q "$INTERFACE_NAME"; then
+		echo "[−] Shutting down TUN interface $INTERFACE_NAME..."
+		sudo ifconfig "$INTERFACE_NAME" down
+	else
+		echo "[✓] TUN interface $INTERFACE_NAME already removed."
+	fi
+
+	if pgrep -qf "nohup tun2socks -device $INTERFACE_NAME"; then
+		echo "[−] Killing tun2socks process..."
+		pkill -f "nohup tun2socks -device $INTERFACE_NAME"
+	else
+		echo "[✓] tun2socks already stopped."
+	fi
+}
+
 start() {
+	sudo -v
 	create_ssh_tunnel
+	create_tun
 }
 
 stop() {
+	sudo -v
+	destroy_tun
 	destroy_ssh_tunnel
 }
 
