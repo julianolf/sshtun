@@ -11,8 +11,30 @@ SSH_HOST=""
 SHOW_HELP=0
 SHOW_VERSION=0
 VERSION="0.1.0"
+ACTION=""
+
+show_usage() {
+	cat <<EOF
+Usage: sshacky [options...] <start|stop>
+
+ --config               Configuration file (default: ~/.config/sshacky/config.cfg)
+ --domains              File containing a list of domains (default: ~/.config/sshacky/domains)
+ --help                 Show usage and exit
+ --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
+ --interface-name       TUN interface name (default: utun123)
+ --socks-port           Port for the SSH tunnel (default: 1080)
+ --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
+ --version              Show version and exit
+EOF
+}
+
+show_version() {
+	echo "$0 v$VERSION"
+}
 
 parse_args() {
+	POS_ARGS=()
+
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--config)
@@ -47,42 +69,17 @@ parse_args() {
 			SHOW_VERSION=1
 			shift
 			;;
-		*)
+		-*)
 			echo "Unknown option: $1"
+			echo "Try '$0 --help' for more information"
 			exit 1
+			;;
+		*)
+			POS_ARGS+=("$1")
+			shift
 			;;
 		esac
 	done
-}
-
-load_config() {
-	if [ -f "$CONFIG" ] && [ -r "$CONFIG" ]; then
-		# shellcheck source=/dev/null
-		source "$CONFIG"
-	fi
-}
-
-show_usage() {
-	cat <<EOF
-Usage: sshacky [options...]
-
- --config               Configuration file (default: ~/.config/sshacky/config.cfg)
- --domains              File containing a list of domains (default: ~/.config/sshacky/domains)
- --help                 Show usage and exit
- --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
- --interface-name       TUN interface name (default: utun123)
- --socks-port           Port for the SSH tunnel (default: 1080)
- --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
- --version              Show version and exit
-EOF
-}
-
-show_version() {
-	echo "$0 v$VERSION"
-}
-
-main() {
-	parse_args "$@"
 
 	if [ "$SHOW_HELP" -eq 1 ]; then
 		show_usage
@@ -94,12 +91,45 @@ main() {
 		exit 0
 	fi
 
-	load_config
-
-	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
-		echo "error: '$DOMAINS' is either not a regular file or not readable"
+	if [ "${#POS_ARGS[@]}" -eq 0 ]; then
+		echo "Error: missing action argument"
+		echo "Try '$0 --help' for more information"
 		exit 1
 	fi
+
+	ACTION="${POS_ARGS[0]}"
+
+	if [ "$ACTION" != "start" ] && [ "$ACTION" != "stop" ]; then
+		echo "Error: invalid action '$ACTION'"
+		echo "Try '$0 --help' for more information"
+		exit 1
+	fi
+}
+
+load_config() {
+	if [ -f "$CONFIG" ] && [ -r "$CONFIG" ]; then
+		# shellcheck source=/dev/null
+		source "$CONFIG"
+	fi
+}
+
+main() {
+	parse_args "$@"
+	load_config
+
+	case "$ACTION" in
+	start)
+		echo "Starting..."
+		;;
+	stop)
+		echo "Stopping..."
+		;;
+	*)
+		echo "Error: invalid action"
+		echo "Try '$0 --help' for more information"
+		exit 1
+		;;
+	esac
 }
 
 main "$@"
