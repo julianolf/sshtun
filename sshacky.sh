@@ -113,16 +113,49 @@ load_config() {
 	fi
 }
 
+create_ssh_tunnel() {
+	if [ -z "$SSH_HOST" ]; then
+		echo "Error: missing SSH host"
+		echo "Try '$0 --help' for more information"
+		exit 1
+
+	fi
+
+	if ! pgrep -qf "ssh -fN -D $SOCKS_PORT"; then
+		echo "[+] Starting SSH SOCKS5 proxy..."
+		ssh -fN -D "$SOCKS_PORT" "$SSH_HOST"
+	else
+		echo "[✓] SSH SOCKS proxy already running."
+	fi
+}
+
+destroy_ssh_tunnel() {
+	if pgrep -qf "ssh -fN -D $SOCKS_PORT"; then
+		echo "[−] Killing SSH SOCKS tunnel on port $SOCKS_PORT..."
+		pkill -f "ssh -fN -D $SOCKS_PORT"
+	else
+		echo "[✓] SSH SOCKS proxy already stopped."
+	fi
+}
+
+start() {
+	create_ssh_tunnel
+}
+
+stop() {
+	destroy_ssh_tunnel
+}
+
 main() {
 	parse_args "$@"
 	load_config
 
 	case "$ACTION" in
 	start)
-		echo "Starting..."
+		start
 		;;
 	stop)
-		echo "Stopping..."
+		stop
 		;;
 	*)
 		echo "Error: invalid action"
