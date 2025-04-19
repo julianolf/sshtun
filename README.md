@@ -22,7 +22,7 @@ sudo curl \
 ## Usage
 
 ```sh
-Usage: sshacky [options...]
+Usage: sshacky [options...] <start|stop>
 
  --config               Configuration file (default: ~/.config/sshacky/config.cfg)
  --domains              File containing a list of domains (default: ~/.config/sshacky/domains)
