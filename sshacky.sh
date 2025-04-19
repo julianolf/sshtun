@@ -170,14 +170,72 @@ destroy_tun() {
 	fi
 }
 
+map_domains() {
+	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
+		echo "Warning: '$DOMAINS' is either not a regular file or not readable. Nothing to map."
+		return 0
+	fi
+
+	while IFS= read -r DOMAIN; do
+		echo "[*] Resolving $DOMAIN via SSH host..."
+
+		# shellcheck disable=SC2029
+		IP=$(ssh -n "$SSH_HOST" dig +short "$DOMAIN" | grep -Eo '^(\d{1,3}\.){3}\d{1,3}$' | head -n1)
+
+		if [ -z "$IP" ]; then
+			echo "[!] Could not resolve $DOMAIN via SSH — skipping"
+			continue
+		fi
+
+		echo "[+] $DOMAIN resolves to $IP"
+
+		if netstat -rn | grep -q "$IP"; then
+			echo "[✓] Route for $IP already exists."
+		else
+			echo "[+] Adding route for $IP via $TUN_IP..."
+			sudo route -n add -net "$IP" "$INTERFACE_IP"
+		fi
+
+		echo "[+] Updating /etc/hosts with $IP $DOMAIN..."
+		sudo sed -i '' "/$DOMAIN/d" /etc/hosts
+		printf "%s\t%s\n" "$IP" "$DOMAIN" | sudo tee -a /etc/hosts >/dev/null
+	done <"$DOMAINS"
+}
+
+unmap_domains() {
+	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
+		echo "Warning: '$DOMAINS' is either not a regular file or not readable. Nothing to unmap."
+		return 0
+	fi
+
+	while IFS= read -r DOMAIN; do
+		echo "[*] Looking for $DOMAIN in /etc/hosts..."
+
+		IP=$(grep -v '^#' /etc/hosts | grep "$DOMAIN" | awk '{print $1}')
+
+		if [ -z "$IP" ]; then
+			echo "[!] Could not find $DOMAIN — skipping"
+			continue
+		fi
+
+		echo "[−] Removing route for $IP..."
+		sudo route -n delete -net "$IP" "$INTERFACE_IP"
+
+		echo "[-] Removing $DOMAIN from /etc/hosts..."
+		sudo sed -i '' "/$DOMAIN/d" /etc/hosts
+	done <"$DOMAINS"
+}
+
 start() {
 	sudo -v
 	create_ssh_tunnel
 	create_tun
+	map_domains
 }
 
 stop() {
 	sudo -v
+	unmap_domains
 	destroy_tun
 	destroy_ssh_tunnel
 }
