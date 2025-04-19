@@ -1,5 +1,7 @@
 # sshacky
 
+![CI](https://github.com/julianolf/sshacky/actions/workflows/ci.yml/badge.svg?event=push)
+
 Configure network traffic routing over SSH using SOCKS5.
 
 ### Platforms
