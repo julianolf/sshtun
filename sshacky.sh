@@ -30,7 +30,7 @@ EOF
 }
 
 show_version() {
-	echo "$0 v$VERSION"
+	echo "sshacky v$VERSION"
 }
 
 parse_args() {
@@ -88,7 +88,7 @@ parse_args() {
 	fi
 
 	if [ "$SHOW_VERSION" -eq 1 ]; then
-		show_version "$0"
+		show_version
 		exit 0
 	fi
 
