@@ -1,0 +1,9 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  CI:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install shellcheck
+      - run: shellcheck --shell=bash --severity=warning sshacky.sh
