@@ -191,11 +191,11 @@ map_domains() {
 
 		echo "[+] $DOMAIN resolves to $IP"
 
-		if netstat -rn | grep -q "$IP"; then
+		if netstat -rn | grep -q "$IP/32"; then
 			echo "[✓] Route for $IP already exists."
 		else
 			echo "[+] Adding route for $IP via $TUN_IP..."
-			sudo route -n add -net "$IP" "$INTERFACE_IP"
+			sudo route -n add -net "$IP/32" "$INTERFACE_IP"
 		fi
 
 		echo "[+] Updating /etc/hosts with $IP $DOMAIN..."
@@ -221,7 +221,7 @@ unmap_domains() {
 		fi
 
 		echo "[−] Removing route for $IP..."
-		sudo route -n delete -net "$IP" "$INTERFACE_IP"
+		sudo route -n delete -net "$IP/32" "$INTERFACE_IP"
 
 		echo "[-] Removing $DOMAIN from /etc/hosts..."
 		sudo sed -i '' "/$DOMAIN/d" /etc/hosts
