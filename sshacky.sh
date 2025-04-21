@@ -180,7 +180,7 @@ map_domains() {
 		echo "[*] Resolving $DOMAIN via SSH host..."
 
 		# shellcheck disable=SC2029
-		IP=$(ssh -n "$SSH_HOST" dig +short "$DOMAIN" | grep -Eo '^(\d{1,3}\.){3}\d{1,3}$' | head -n1)
+		IP=$(ssh -n "$SSH_HOST" getent hosts "$DOMAIN" | grep -Eo '(\d{1,3}\.){3}\d{1,3}' | head -n1)
 
 		if [ -z "$IP" ]; then
 			echo "[!] Could not resolve $DOMAIN via SSH — skipping"
