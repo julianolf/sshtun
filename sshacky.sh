@@ -136,7 +136,7 @@ create_ssh_tunnel() {
 destroy_ssh_tunnel() {
 	if pgrep -qf "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"; then
 		echo "[−] Killing SSH SOCKS tunnel on port $SOCKS_PORT..."
-		pkill -f "ssh -fN -D $SOCKS_PORT"
+		pkill -f "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"
 	else
 		echo "[✓] SSH SOCKS proxy already stopped."
 	fi
