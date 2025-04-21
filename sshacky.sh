@@ -13,6 +13,8 @@ SHOW_VERSION=0
 VERSION="0.1.0"
 ACTION=""
 LOG_FILE="/tmp/sshacky-$(date "+%Y%m%d").log"
+KEEP_ALIVE_INTERVAL=30
+KEEP_ALIVE_COUNT=3
 
 show_usage() {
 	cat <<EOF
@@ -124,7 +126,7 @@ create_ssh_tunnel() {
 
 	if ! pgrep -qf "ssh -fN -D $SOCKS_PORT"; then
 		echo "[+] Starting SSH SOCKS5 proxy..."
-		ssh -fN -D "$SOCKS_PORT" "$SSH_HOST"
+		ssh -fNT -o ServerAliveInterval="$KEEP_ALIVE_INTERVAL" -o ServerAliveCountMax="$KEEP_ALIVE_COUNT" -D "$SOCKS_PORT" "$SSH_HOST"
 		sleep 1
 	else
 		echo "[✓] SSH SOCKS proxy already running."
@@ -132,7 +134,7 @@ create_ssh_tunnel() {
 }
 
 destroy_ssh_tunnel() {
-	if pgrep -qf "ssh -fN -D $SOCKS_PORT"; then
+	if pgrep -qf "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"; then
 		echo "[−] Killing SSH SOCKS tunnel on port $SOCKS_PORT..."
 		pkill -f "ssh -fN -D $SOCKS_PORT"
 	else
