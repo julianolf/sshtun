@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 CONFIG="$HOME/.config/sshacky/config.json"
 DOMAINS=()
@@ -40,20 +40,19 @@ show_version() {
 }
 
 parse_args() {
-	while [ $# -gt 0 ]; do
-		OPTS+=("$1")
-
+	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		--config)
 			CONFIG="$2"
 			shift 2
 			;;
 		--domains)
+			OPTS+=("$1")
 			shift
 
-			if [[ "$1" == '' || "$1" == --* ]]; then
-				echo "Error: invalid domains"
-				echo "Try '$0 --help' for more information"
+			if [[ -z "$1" || "$1" == --* ]]; then
+				echo "Error: invalid domains" >&2
+				echo "Try '$0 --help' for more information" >&2
 				exit 1
 			fi
 
@@ -61,10 +60,12 @@ parse_args() {
 			shift
 			;;
 		--interface-ip)
+			OPTS+=("$1")
 			INTERFACE_IP="$2"
 			shift 2
 			;;
 		--interface-name)
+			OPTS+=("$1")
 			INTERFACE_NAME="$2"
 			shift 2
 			;;
@@ -73,10 +74,12 @@ parse_args() {
 			shift 2
 			;;
 		--socks-port)
+			OPTS+=("$1")
 			SOCKS_PORT="$2"
 			shift 2
 			;;
 		--ssh-host)
+			OPTS+=("$1")
 			SSH_HOST="$2"
 			shift 2
 			;;
@@ -94,36 +97,38 @@ parse_args() {
 			exit 1
 			;;
 		*)
-			OPTS=("${OPTS[@]/$1/}")
 			ARGS+=("$1")
 			shift
 			;;
 		esac
 	done
 
-	if [ "$SHOW_HELP" -eq 1 ]; then
+	if [[ "$SHOW_HELP" -eq 1 ]]; then
 		show_usage
 		exit 0
 	fi
 
-	if [ "$SHOW_VERSION" -eq 1 ]; then
+	if [[ "$SHOW_VERSION" -eq 1 ]]; then
 		show_version
 		exit 0
 	fi
 
-	if [ "${#ARGS[@]}" -eq 0 ]; then
-		echo "Error: missing action argument"
-		echo "Try '$0 --help' for more information"
+	if [[ "${#ARGS[@]}" -eq 0 ]]; then
+		echo "Error: missing action argument" >&2
+		echo "Try '$0 --help' for more information" >&2
 		exit 1
 	fi
 
 	ACTION="${ARGS[0]}"
 
-	if [ "$ACTION" != "start" ] && [ "$ACTION" != "stop" ]; then
-		echo "Error: invalid action '$ACTION'"
-		echo "Try '$0 --help' for more information"
+	case "$ACTION" in
+	start | stop) ;;
+	*)
+		echo "Error: invalid action '$ACTION'" >&2
+		echo "Try '$0 --help' for more information" >&2
 		exit 1
-	fi
+		;;
+	esac
 }
 
 contains() {
@@ -131,89 +136,116 @@ contains() {
 	shift
 
 	for element in "$@"; do
-		[ "$element" = "$item" ] && return 0
+		[[ "$element" == "$item" ]] && return 0
 	done
 
 	return 1
 }
 
+assign_if_unset() {
+	local var="$1"
+	local key
+	key="$(echo "$var" | tr '[:upper:]' '[:lower:]')"
+	local flag="--${key//_/-}"
+	local current_value="${!var:-}"
+	local json="$2"
+
+	if ! contains "$flag" "${OPTS[@]-}"; then
+		printf -v "$var" '%s' "$(jq -r --arg current "$current_value" ".${key} // \$current" <<<"$json")"
+	fi
+}
+
 parse_config() {
-	if ! contains '--interface-ip' "${OPTS[@]}"; then
-		INTERFACE_IP=$(echo "$1" | jq -r ".interface_ip // \"$INTERFACE_IP\"")
-	fi
+	local json="$1"
 
-	if ! contains '--interface-name' "${OPTS[@]}"; then
-		INTERFACE_NAME=$(echo "$1" | jq -r ".interface_name // \"$INTERFACE_NAME\"")
-	fi
+	assign_if_unset INTERFACE_IP "$json"
+	assign_if_unset INTERFACE_NAME "$json"
+	assign_if_unset SOCKS_PORT "$json"
+	assign_if_unset SSH_HOST "$json"
 
-	if ! contains '--socks-port' "${OPTS[@]}"; then
-		SOCKS_PORT=$(echo "$1" | jq -r ".socks_port // $SOCKS_PORT")
-	fi
-
-	if ! contains '--ssh-host' "${OPTS[@]}"; then
-		SSH_HOST=$(echo "$1" | jq -r ".ssh_host // \"$SSH_HOST\"")
-	fi
-
-	if ! contains '--domains' "${OPTS[@]}"; then
+	if ! contains '--domains' "${OPTS[@]-}"; then
 		DOMAINS=()
 		while IFS= read -r DOMAIN; do
 			DOMAINS+=("$DOMAIN")
-		done < <(echo "$1" | jq -r '.domains // [] | .[]')
+		done < <(jq -r '.domains // [] | .[]' <<<"$json")
 	fi
 }
 
 load_config() {
-	if [ ! -f "$CONFIG" ] || [ ! -r "$CONFIG" ]; then
+	if [[ ! -f "$CONFIG" || ! -r "$CONFIG" ]]; then
 		return 0
 	fi
 
 	if ! jq empty "$CONFIG" >/dev/null 2>&1; then
-		echo "Error: invalid configuration file '$CONFIG'"
+		echo "Error: invalid configuration file '$CONFIG'" >&2
 		exit 1
 	fi
 
 	parse_config "$(jq -cM '. | del(.profiles)' "$CONFIG")"
 
-	if [ -n "$PROFILE" ]; then
-		cfg=$(jq -cM ".profiles.$PROFILE // empty" "$CONFIG")
+	if [[ -n "$PROFILE" ]]; then
+		local profile
+		profile=$(jq -cM ".profiles.$PROFILE // empty" "$CONFIG")
 
-		if [ -z "$cfg" ]; then
-			echo "Error: profile '$PROFILE' not found in configuration file '$CONFIG'"
+		if [[ -z "$profile" ]]; then
+			echo "Error: profile '$PROFILE' not found in configuration file '$CONFIG'" >&2
 			exit 1
 		fi
 
-		parse_config "$cfg"
+		parse_config "$profile"
 	fi
 }
 
+ssh_cmd() {
+	echo "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"
+}
+
 create_ssh_tunnel() {
-	if [ -z "$SSH_HOST" ]; then
-		echo "Error: missing SSH host"
-		echo "Try '$0 --help' for more information"
+	if [[ -z "$SSH_HOST" ]]; then
+		echo "Error: missing SSH host" >&2
+		echo "Try '$0 --help' for more information" >&2
 		exit 1
 
 	fi
 
-	if ! pgrep -qf "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"; then
+	local cmd
+	cmd="$(ssh_cmd)"
+
+	if ! pgrep -qf "$cmd"; then
 		echo "[+] Starting SSH SOCKS5 proxy..."
-		ssh -fNT -o ServerAliveInterval="$KEEP_ALIVE_INTERVAL" -o ServerAliveCountMax="$KEEP_ALIVE_COUNT" -D "$SOCKS_PORT" "$SSH_HOST"
-		sleep 1
+		if eval "$cmd"; then
+			echo "[✓] SSH SOCKS5 proxy started."
+			sleep 1
+		else
+			echo "[-] Failed to start SSH SOCKS5 proxy." >&2
+			exit 1
+		fi
 	else
 		echo "[✓] SSH SOCKS proxy already running."
 	fi
 }
 
 destroy_ssh_tunnel() {
-	if pgrep -qf "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"; then
+	local cmd
+	cmd="$(ssh_cmd)"
+
+	if pgrep -qf "$cmd"; then
 		echo "[−] Killing SSH SOCKS tunnel on port $SOCKS_PORT..."
-		pkill -f "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"
+		pkill -f "$cmd"
 	else
 		echo "[✓] SSH SOCKS proxy already stopped."
 	fi
 }
 
+tun2socks_cmd() {
+	echo "nohup tun2socks -device $INTERFACE_NAME"
+}
+
 create_tun() {
-	if ! pgrep -qf "nohup tun2socks -device $INTERFACE_NAME"; then
+	local cmd
+	cmd="$(tun2socks_cmd)"
+
+	if ! pgrep -qf "$cmd"; then
 		echo "[+] Starting tun2socks..."
 		sudo nohup tun2socks \
 			-device "$INTERFACE_NAME" \
@@ -227,23 +259,34 @@ create_tun() {
 }
 
 destroy_tun() {
-	if ifconfig "$INTERFACE_NAME" 2>/dev/null | grep -q "$INTERFACE_NAME"; then
+	if ifconfig "$INTERFACE_NAME" &>/dev/null; then
 		echo "[−] Shutting down TUN interface $INTERFACE_NAME..."
 		sudo ifconfig "$INTERFACE_NAME" down
 	else
 		echo "[✓] TUN interface $INTERFACE_NAME already removed."
 	fi
 
-	if pgrep -qf "nohup tun2socks -device $INTERFACE_NAME"; then
+	local cmd
+	cmd="$(tun2socks_cmd)"
+
+	if pgrep -qf "$cmd"; then
 		echo "[−] Killing tun2socks process..."
-		pkill -f "nohup tun2socks -device $INTERFACE_NAME"
+		pkill -f "$cmd"
 	else
 		echo "[✓] tun2socks already stopped."
 	fi
 }
 
+add_host() {
+	local ip="$1"
+	local domain="$2"
+
+	sudo sed -i '' "/[[:space:]]$domain$/d" /etc/hosts
+	printf "%s\t%s\n" "$ip" "$domain" | sudo tee -a /etc/hosts >/dev/null
+}
+
 map_domains() {
-	if [ "${#DOMAINS[@]}" -eq 0 ]; then
+	if [[ "${#DOMAINS[@]}" -eq 0 ]]; then
 		echo "Warning: domains is empty. Nothing to map."
 		return 0
 	fi
@@ -252,40 +295,45 @@ map_domains() {
 		echo "[*] Resolving $DOMAIN via SSH host..."
 
 		# shellcheck disable=SC2029
-		IP=$(ssh -n "$SSH_HOST" getent hosts "$DOMAIN" | grep -Eo '(\d{1,3}\.){3}\d{1,3}' | head -n1)
+		IP=$(ssh -n "$SSH_HOST" getent hosts "$DOMAIN" | awk '{ print $1 }' | head -n1)
 
-		if [ -z "$IP" ]; then
+		if [[ -z "$IP" ]]; then
 			echo "[!] Could not resolve $DOMAIN via SSH — skipping"
 			continue
 		fi
 
 		echo "[+] $DOMAIN resolves to $IP"
 
-		if netstat -rn | grep -q "$IP/32"; then
+		if netstat -rn | grep -q -F "$IP/32"; then
 			echo "[✓] Route for $IP already exists."
 		else
-			echo "[+] Adding route for $IP via $TUN_IP..."
+			echo "[+] Adding route for $IP via $INTERFACE_IP..."
 			sudo route -n add -net "$IP/32" "$INTERFACE_IP"
 		fi
 
 		echo "[+] Updating /etc/hosts with $IP $DOMAIN..."
-		sudo sed -i '' "/$DOMAIN/d" /etc/hosts
-		printf "%s\t%s\n" "$IP" "$DOMAIN" | sudo tee -a /etc/hosts >/dev/null
+		add_host "$IP" "$DOMAIN"
 	done
 }
 
+remove_host() {
+	local domain="$1"
+
+	sudo sed -i '' "/[[:space:]]$domain$/d" /etc/hosts
+}
+
 unmap_domains() {
-	if [ "${#DOMAINS[@]}" -eq 0 ]; then
-		echo "Warning: domains is empty. Nothing to map."
+	if [[ "${#DOMAINS[@]}" -eq 0 ]]; then
+		echo "Warning: domains is empty. Nothing to unmap."
 		return 0
 	fi
 
 	for DOMAIN in "${DOMAINS[@]}"; do
 		echo "[*] Looking for $DOMAIN in /etc/hosts..."
 
-		IP=$(grep -v '^#' /etc/hosts | grep "$DOMAIN" | awk '{print $1}')
+		IP=$(grep -v '^#' /etc/hosts | grep -F "$DOMAIN" | awk '{print $1}')
 
-		if [ -z "$IP" ]; then
+		if [[ -z "$IP" ]]; then
 			echo "[!] Could not find $DOMAIN — skipping"
 			continue
 		fi
@@ -294,7 +342,7 @@ unmap_domains() {
 		sudo route -n delete -net "$IP/32" "$INTERFACE_IP"
 
 		echo "[-] Removing $DOMAIN from /etc/hosts..."
-		sudo sed -i '' "/$DOMAIN/d" /etc/hosts
+		remove_host "$DOMAIN"
 	done
 }
 
@@ -324,11 +372,14 @@ main() {
 		stop
 		;;
 	*)
-		echo "Error: invalid action"
-		echo "Try '$0 --help' for more information"
+		echo "Error: invalid action" >&2
+		echo "Try '$0 --help' for more information" >&2
 		exit 1
 		;;
 	esac
 }
 
-main "$@"
+main "$@" || {
+	echo "Something went wrong. Exiting." >&2
+	exit 1
+}
