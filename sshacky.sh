@@ -124,7 +124,7 @@ create_ssh_tunnel() {
 
 	fi
 
-	if ! pgrep -qf "ssh -fN -D $SOCKS_PORT"; then
+	if ! pgrep -qf "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"; then
 		echo "[+] Starting SSH SOCKS5 proxy..."
 		ssh -fNT -o ServerAliveInterval="$KEEP_ALIVE_INTERVAL" -o ServerAliveCountMax="$KEEP_ALIVE_COUNT" -D "$SOCKS_PORT" "$SSH_HOST"
 		sleep 1
