@@ -2,7 +2,7 @@
 
 set -e
 
-CONFIG="$HOME/.config/sshacky/config.cfg"
+CONFIG="$HOME/.config/sshacky/config.json"
 DOMAINS="$HOME/.config/sshacky/domains"
 INTERFACE_IP="198.18.0.1"
 INTERFACE_NAME="utun123"
@@ -15,6 +15,8 @@ ACTION=""
 LOG_FILE="/tmp/sshacky-$(date "+%Y%m%d").log"
 KEEP_ALIVE_INTERVAL=30
 KEEP_ALIVE_COUNT=3
+OPTS=()
+ARGS=()
 
 show_usage() {
 	cat <<EOF
@@ -36,9 +38,9 @@ show_version() {
 }
 
 parse_args() {
-	POS_ARGS=()
-
 	while [ $# -gt 0 ]; do
+		OPTS+=("$1")
+
 		case "$1" in
 		--config)
 			CONFIG="$2"
@@ -78,7 +80,8 @@ parse_args() {
 			exit 1
 			;;
 		*)
-			POS_ARGS+=("$1")
+			OPTS=("${OPTS[@]/$1/}")
+			ARGS+=("$1")
 			shift
 			;;
 		esac
@@ -94,13 +97,13 @@ parse_args() {
 		exit 0
 	fi
 
-	if [ "${#POS_ARGS[@]}" -eq 0 ]; then
+	if [ "${#ARGS[@]}" -eq 0 ]; then
 		echo "Error: missing action argument"
 		echo "Try '$0 --help' for more information"
 		exit 1
 	fi
 
-	ACTION="${POS_ARGS[0]}"
+	ACTION="${ARGS[0]}"
 
 	if [ "$ACTION" != "start" ] && [ "$ACTION" != "stop" ]; then
 		echo "Error: invalid action '$ACTION'"
@@ -109,11 +112,46 @@ parse_args() {
 	fi
 }
 
-load_config() {
-	if [ -f "$CONFIG" ] && [ -r "$CONFIG" ]; then
-		# shellcheck source=/dev/null
-		source "$CONFIG"
+contains() {
+	local item="$1"
+	shift
+
+	for element in "$@"; do
+		[ "$element" = "$item" ] && return 0
+	done
+
+	return 1
+}
+
+parse_config() {
+	if ! contains '--interface-ip' "${OPTS[@]}"; then
+		INTERFACE_IP=$(echo "$1" | jq -r ".interface_ip // \"$INTERFACE_IP\"")
 	fi
+
+	if ! contains '--interface-name' "${OPTS[@]}"; then
+		INTERFACE_NAME=$(echo "$1" | jq -r ".interface_name // \"$INTERFACE_NAME\"")
+	fi
+
+	if ! contains '--socks-port' "${OPTS[@]}"; then
+		SOCKS_PORT=$(echo "$1" | jq -r ".socks_port // $SOCKS_PORT")
+	fi
+
+	if ! contains '--ssh-host' "${OPTS[@]}"; then
+		SSH_HOST=$(echo "$1" | jq -r ".ssh_host // \"$SSH_HOST\"")
+	fi
+}
+
+load_config() {
+	if [ ! -f "$CONFIG" ] || [ ! -r "$CONFIG" ]; then
+		return 0
+	fi
+
+	if ! jq empty "$CONFIG" >/dev/null 2>&1; then
+		echo "Error: invalid configuration file '$CONFIG'"
+		exit 1
+	fi
+
+	parse_config "$(jq -cM '.' "$CONFIG")"
 }
 
 create_ssh_tunnel() {
