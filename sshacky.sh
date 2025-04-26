@@ -3,7 +3,7 @@
 set -e
 
 CONFIG="$HOME/.config/sshacky/config.json"
-DOMAINS="$HOME/.config/sshacky/domains"
+DOMAINS=()
 INTERFACE_IP="198.18.0.1"
 INTERFACE_NAME="utun123"
 SOCKS_PORT="1080"
@@ -23,7 +23,7 @@ show_usage() {
 Usage: sshacky [options...] <start|stop>
 
  --config               Configuration file (default: ~/.config/sshacky/config.cfg)
- --domains              File containing a list of domains (default: ~/.config/sshacky/domains)
+ --domains              Comma-separated list of domains (e.g., one.com,two.com)
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
  --interface-name       TUN interface name (default: utun123)
@@ -47,8 +47,16 @@ parse_args() {
 			shift 2
 			;;
 		--domains)
-			DOMAINS="$2"
-			shift 2
+			shift
+
+			if [[ "$1" == '' || "$1" == --* ]]; then
+				echo "Error: invalid domains"
+				echo "Try '$0 --help' for more information"
+				exit 1
+			fi
+
+			IFS=',' read -ra DOMAINS <<<"$1"
+			shift
 			;;
 		--interface-ip)
 			INTERFACE_IP="$2"
@@ -139,6 +147,12 @@ parse_config() {
 	if ! contains '--ssh-host' "${OPTS[@]}"; then
 		SSH_HOST=$(echo "$1" | jq -r ".ssh_host // \"$SSH_HOST\"")
 	fi
+
+	if ! contains '--domains' "${OPTS[@]}"; then
+		while IFS= read -r DOMAIN; do
+			DOMAINS+=("$DOMAIN")
+		done < <(echo "$1" | jq -r '.domains // [] | .[]')
+	fi
 }
 
 load_config() {
@@ -211,12 +225,12 @@ destroy_tun() {
 }
 
 map_domains() {
-	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
-		echo "Warning: '$DOMAINS' is either not a regular file or not readable. Nothing to map."
+	if [ "${#DOMAINS[@]}" -eq 0 ]; then
+		echo "Warning: domains is empty. Nothing to map."
 		return 0
 	fi
 
-	while IFS= read -r DOMAIN; do
+	for DOMAIN in "${DOMAINS[@]}"; do
 		echo "[*] Resolving $DOMAIN via SSH host..."
 
 		# shellcheck disable=SC2029
@@ -239,16 +253,16 @@ map_domains() {
 		echo "[+] Updating /etc/hosts with $IP $DOMAIN..."
 		sudo sed -i '' "/$DOMAIN/d" /etc/hosts
 		printf "%s\t%s\n" "$IP" "$DOMAIN" | sudo tee -a /etc/hosts >/dev/null
-	done <"$DOMAINS"
+	done
 }
 
 unmap_domains() {
-	if [ ! -f "$DOMAINS" ] || [ ! -r "$DOMAINS" ]; then
-		echo "Warning: '$DOMAINS' is either not a regular file or not readable. Nothing to unmap."
+	if [ "${#DOMAINS[@]}" -eq 0 ]; then
+		echo "Warning: domains is empty. Nothing to map."
 		return 0
 	fi
 
-	while IFS= read -r DOMAIN; do
+	for DOMAIN in "${DOMAINS[@]}"; do
 		echo "[*] Looking for $DOMAIN in /etc/hosts..."
 
 		IP=$(grep -v '^#' /etc/hosts | grep "$DOMAIN" | awk '{print $1}')
@@ -263,7 +277,7 @@ unmap_domains() {
 
 		echo "[-] Removing $DOMAIN from /etc/hosts..."
 		sudo sed -i '' "/$DOMAIN/d" /etc/hosts
-	done <"$DOMAINS"
+	done
 }
 
 start() {
