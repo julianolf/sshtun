@@ -10,6 +10,7 @@ Configure network traffic routing over SSH using SOCKS5.
 
 ### Requirements
 
+- [jq](https://jqlang.org)
 - [tun2socks](https://github.com/xjasonlyu/tun2socks)
 
 ## Installation
@@ -27,7 +28,7 @@ sudo curl \
 ```sh
 Usage: sshacky [options...] <start|stop>
 
- --config               Configuration file (default: ~/.config/sshacky/config.cfg)
+ --config               Configuration file (default: ~/.config/sshacky/config.json)
  --domains              File containing a list of domains (default: ~/.config/sshacky/domains)
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
@@ -39,15 +40,17 @@ Usage: sshacky [options...] <start|stop>
 
 #### Configuration file
 
-The configuration file uses `key=value` pairs, one per line. Keys match the command-line flags: they are written in uppercase, with the leading double dashes removed and remaining dashes replaced by underscores.
+The configuration file must be in JSON format. It defines the settings used by the program.
 
 Example:
 
-```sh
-INTERFACE_IP=198.18.0.1
-INTERFACE_NAME=utun123
-SOCKS_PORT=1080
-SSH_HOST=user@jumpbox
+```json
+{
+  "interface_ip": "198.18.0.1",
+  "interface_name": "utun123",
+  "socks_port": 1080,
+  "ssh_host": "user@jumpbox"
+}
 ```
 
 #### Domains file
