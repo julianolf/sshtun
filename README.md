@@ -29,7 +29,7 @@ sudo curl \
 Usage: sshacky [options...] <start|stop>
 
  --config               Configuration file (default: ~/.config/sshacky/config.json)
- --domains              File containing a list of domains (default: ~/.config/sshacky/domains)
+ --domains              Comma-separated list of domains (e.g., one.com,two.com)
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
  --interface-name       TUN interface name (default: utun123)
@@ -49,17 +49,10 @@ Example:
   "interface_ip": "198.18.0.1",
   "interface_name": "utun123",
   "socks_port": 1080,
-  "ssh_host": "user@jumpbox"
+  "ssh_host": "user@jumpbox",
+  "domains": [
+    "one.com",
+    "two.com"
+  ]
 }
-```
-
-#### Domains file
-
-The domains file is a plain text file containing full domain names, one per line.
-
-Example:
-
-```
-private.zone
-sub.domain.net
 ```
