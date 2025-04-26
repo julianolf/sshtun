@@ -17,7 +17,7 @@ Configure network traffic routing over SSH using SOCKS5.
 ```sh
 sudo curl \
     -sSfL \
-    --output '/usr/local/bin/sshacky' \
+    --output /usr/local/bin/sshacky \
     https://raw.githubusercontent.com/julianolf/sshacky/refs/heads/main/sshacky.sh &&
     sudo chmod +x /usr/local/bin/sshacky
 ```
