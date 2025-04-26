@@ -33,6 +33,7 @@ Usage: sshacky [options...] <start|stop>
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
  --interface-name       TUN interface name (default: utun123)
+ --profile              Profile from the configuration file to load
  --socks-port           Port for the SSH tunnel (default: 1080)
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
  --version              Show version and exit
@@ -53,6 +54,22 @@ Example:
   "domains": [
     "one.com",
     "two.com"
-  ]
+  ],
+  "profiles": {
+    "test": {
+      "interface_ip": "198.18.0.2",
+      "interface_name": "utun321",
+      "socks_port": 1088,
+      "ssh_host": "user@192.168.0.1",
+      "domains": [
+        "three.com"
+      ]
+    }
+  }
 }
 ```
+
+When multiple values are defined for the same configuration key, the one with the highest priority takes effect.
+
+The priority order is, from highest to lowest:
+command-line options, profile configuration, global configuration, default values.
