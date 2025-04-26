@@ -6,6 +6,7 @@ CONFIG="$HOME/.config/sshacky/config.json"
 DOMAINS=()
 INTERFACE_IP="198.18.0.1"
 INTERFACE_NAME="utun123"
+PROFILE=""
 SOCKS_PORT="1080"
 SSH_HOST=""
 SHOW_HELP=0
@@ -27,6 +28,7 @@ Usage: sshacky [options...] <start|stop>
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
  --interface-name       TUN interface name (default: utun123)
+ --profile              Profile from the configuration file to load
  --socks-port           Port for the SSH tunnel (default: 1080)
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
  --version              Show version and exit
@@ -64,6 +66,10 @@ parse_args() {
 			;;
 		--interface-name)
 			INTERFACE_NAME="$2"
+			shift 2
+			;;
+		--profile)
+			PROFILE="$2"
 			shift 2
 			;;
 		--socks-port)
@@ -149,6 +155,7 @@ parse_config() {
 	fi
 
 	if ! contains '--domains' "${OPTS[@]}"; then
+		DOMAINS=()
 		while IFS= read -r DOMAIN; do
 			DOMAINS+=("$DOMAIN")
 		done < <(echo "$1" | jq -r '.domains // [] | .[]')
@@ -165,7 +172,18 @@ load_config() {
 		exit 1
 	fi
 
-	parse_config "$(jq -cM '.' "$CONFIG")"
+	parse_config "$(jq -cM '. | del(.profiles)' "$CONFIG")"
+
+	if [ -n "$PROFILE" ]; then
+		cfg=$(jq -cM ".profiles.$PROFILE // empty" "$CONFIG")
+
+		if [ -z "$cfg" ]; then
+			echo "Error: profile '$PROFILE' not found in configuration file '$CONFIG'"
+			exit 1
+		fi
+
+		parse_config "$cfg"
+	fi
 }
 
 create_ssh_tunnel() {
