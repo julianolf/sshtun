@@ -277,11 +277,17 @@ destroy_tun() {
 	fi
 }
 
+remove_host() {
+	local domain="$1"
+
+	sudo sed -i '' "/[[:space:]]$domain$/d" /etc/hosts
+}
+
 add_host() {
 	local ip="$1"
 	local domain="$2"
 
-	sudo sed -i '' "/[[:space:]]$domain$/d" /etc/hosts
+	remove_host "$domain"
 	printf "%s\t%s\n" "$ip" "$domain" | sudo tee -a /etc/hosts >/dev/null
 }
 
@@ -291,35 +297,39 @@ map_domains() {
 		return 0
 	fi
 
-	for DOMAIN in "${domains[@]}"; do
-		echo "[*] Resolving $DOMAIN via SSH host..."
+	echo "[*] Resolving domains via SSH host..."
 
-		# shellcheck disable=SC2029
-		IP=$(ssh -n "$ssh_host" getent hosts "$DOMAIN" | awk '{ print $1 }' | head -n1)
+	local dns_table
+	dns_table=$(printf "%s\n" "${domains[@]}" | ssh "$ssh_host" 'xargs -I{} sh -c '"'"'getent hosts {} | awk "{print \$1 \"\t\" \"{}\"}"'"'"'')
 
-		if [[ -z "$IP" ]]; then
-			echo "[!] Could not resolve $DOMAIN via SSH — skipping"
-			continue
-		fi
+	local resolved_names=""
 
-		echo "[+] $DOMAIN resolves to $IP"
+	while IFS= read -r line; do
 
-		if netstat -rn | grep -q -F "$IP/32"; then
-			echo "[✓] Route for $IP already exists."
+		local ip=${line%%$'\t'*}
+		local domain=${line#*$'\t'}
+
+		resolved_names+="$domain"$'\n'
+
+		echo "[+] $domain resolves to $ip"
+
+		if netstat -rn | grep -q -F "$ip/32"; then
+			echo "[✓] Route for $ip already exists."
 		else
-			echo "[+] Adding route for $IP via $interface_ip..."
-			sudo route -n add -net "$IP/32" "$interface_ip"
+			echo "[+] Adding route for $ip via $interface_ip..."
+			sudo route -n add -net "$ip/32" "$interface_ip"
 		fi
 
-		echo "[+] Updating /etc/hosts with $IP $DOMAIN..."
-		add_host "$IP" "$DOMAIN"
+		echo "[+] Updating /etc/hosts with $ip $domain..."
+		add_host "$ip" "$domain"
+
+	done <<<"$dns_table"
+
+	for domain in "${domains[@]}"; do
+		if ! grep -qxF "$domain" <<<"${resolved_names[@]}"; then
+			echo "[!] Could not resolve $domain via SSH"
+		fi
 	done
-}
-
-remove_host() {
-	local domain="$1"
-
-	sudo sed -i '' "/[[:space:]]$domain$/d" /etc/hosts
 }
 
 unmap_domains() {
@@ -328,21 +338,22 @@ unmap_domains() {
 		return 0
 	fi
 
-	for DOMAIN in "${domains[@]}"; do
-		echo "[*] Looking for $DOMAIN in /etc/hosts..."
+	for domain in "${domains[@]}"; do
+		echo "[*] Looking for $domain in /etc/hosts..."
 
-		IP=$(grep -v '^#' /etc/hosts | grep -F "$DOMAIN" | awk '{print $1}')
+		local ip
+		ip=$(grep -v '^#' /etc/hosts | grep -F "$domain" | awk '{print $1}')
 
-		if [[ -z "$IP" ]]; then
-			echo "[!] Could not find $DOMAIN — skipping"
+		if [[ -z "$ip" ]]; then
+			echo "[!] Could not find $domain — skipping"
 			continue
 		fi
 
-		echo "[−] Removing route for $IP..."
-		sudo route -n delete -net "$IP/32" "$interface_ip"
+		echo "[−] Removing route for $ip..."
+		sudo route -n delete -net "$ip/32" "$interface_ip"
 
-		echo "[-] Removing $DOMAIN from /etc/hosts..."
-		remove_host "$DOMAIN"
+		echo "[-] Removing $domain from /etc/hosts..."
+		remove_host "$domain"
 	done
 }
 
