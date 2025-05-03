@@ -2,24 +2,24 @@
 
 set -euo pipefail
 
-CONFIG="$HOME/.config/sshacky/config.json"
-DOMAINS=()
-INTERFACE_IP="198.18.0.1"
-INTERFACE_NAME="utun123"
-PROFILE=""
-SOCKS_PORT="1080"
-SSH_HOST=""
-SHOW_HELP=0
-SHOW_VERSION=0
-VERSION="0.3.0"
-ACTION=""
-LOG_FILE="/tmp/sshacky-$(date "+%Y%m%d").log"
-KEEP_ALIVE_INTERVAL=30
-KEEP_ALIVE_COUNT=3
-OPTS=()
-ARGS=()
+config="$HOME/.config/sshacky/config.json"
+domains=()
+interface_ip="198.18.0.1"
+interface_name="utun123"
+profile=""
+socks_port="1080"
+ssh_host=""
+show_help=0
+show_version=0
+version="0.3.0"
+action=""
+log_file="/tmp/sshacky-$(date "+%Y%m%d").log"
+keep_alive_interval=30
+keep_alive_count=3
+opts=()
+args=()
 
-show_usage() {
+print_usage() {
 	cat <<EOF
 Usage: sshacky [options...] <start|stop>
 
@@ -35,19 +35,19 @@ Usage: sshacky [options...] <start|stop>
 EOF
 }
 
-show_version() {
-	echo "sshacky v$VERSION"
+print_version() {
+	echo "sshacky v$version"
 }
 
 parse_args() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		--config)
-			CONFIG="$2"
+			config="$2"
 			shift 2
 			;;
 		--domains)
-			OPTS+=("$1")
+			opts+=("$1")
 			shift
 
 			if [[ -z "$1" || "$1" == --* ]]; then
@@ -56,39 +56,39 @@ parse_args() {
 				exit 1
 			fi
 
-			IFS=',' read -ra DOMAINS <<<"$1"
+			IFS=',' read -ra domains <<<"$1"
 			shift
 			;;
 		--interface-ip)
-			OPTS+=("$1")
-			INTERFACE_IP="$2"
+			opts+=("$1")
+			interface_ip="$2"
 			shift 2
 			;;
 		--interface-name)
-			OPTS+=("$1")
-			INTERFACE_NAME="$2"
+			opts+=("$1")
+			interface_name="$2"
 			shift 2
 			;;
 		--profile)
-			PROFILE="$2"
+			profile="$2"
 			shift 2
 			;;
 		--socks-port)
-			OPTS+=("$1")
-			SOCKS_PORT="$2"
+			opts+=("$1")
+			socks_port="$2"
 			shift 2
 			;;
 		--ssh-host)
-			OPTS+=("$1")
-			SSH_HOST="$2"
+			opts+=("$1")
+			ssh_host="$2"
 			shift 2
 			;;
 		--help)
-			SHOW_HELP=1
+			show_help=1
 			shift
 			;;
 		--version)
-			SHOW_VERSION=1
+			show_version=1
 			shift
 			;;
 		-*)
@@ -97,34 +97,34 @@ parse_args() {
 			exit 1
 			;;
 		*)
-			ARGS+=("$1")
+			args+=("$1")
 			shift
 			;;
 		esac
 	done
 
-	if [[ "$SHOW_HELP" -eq 1 ]]; then
-		show_usage
+	if [[ "$show_help" -eq 1 ]]; then
+		print_usage
 		exit 0
 	fi
 
-	if [[ "$SHOW_VERSION" -eq 1 ]]; then
-		show_version
+	if [[ "$show_version" -eq 1 ]]; then
+		print_version
 		exit 0
 	fi
 
-	if [[ "${#ARGS[@]}" -eq 0 ]]; then
+	if [[ "${#args[@]}" -eq 0 ]]; then
 		echo "Error: missing action argument" >&2
 		echo "Try '$0 --help' for more information" >&2
 		exit 1
 	fi
 
-	ACTION="${ARGS[0]}"
+	action="${args[0]}"
 
-	case "$ACTION" in
+	case "$action" in
 	start | stop) ;;
 	*)
-		echo "Error: invalid action '$ACTION'" >&2
+		echo "Error: invalid action '$action'" >&2
 		echo "Try '$0 --help' for more information" >&2
 		exit 1
 		;;
@@ -150,7 +150,7 @@ assign_if_unset() {
 	local current_value="${!var:-}"
 	local json="$2"
 
-	if ! contains "$flag" "${OPTS[@]-}"; then
+	if ! contains "$flag" "${opts[@]:-}"; then
 		printf -v "$var" '%s' "$(jq -r --arg current "$current_value" ".${key} // \$current" <<<"$json")"
 	fi
 }
@@ -158,50 +158,50 @@ assign_if_unset() {
 parse_config() {
 	local json="$1"
 
-	assign_if_unset INTERFACE_IP "$json"
-	assign_if_unset INTERFACE_NAME "$json"
-	assign_if_unset SOCKS_PORT "$json"
-	assign_if_unset SSH_HOST "$json"
+	assign_if_unset interface_ip "$json"
+	assign_if_unset interface_name "$json"
+	assign_if_unset socks_port "$json"
+	assign_if_unset ssh_host "$json"
 
-	if ! contains '--domains' "${OPTS[@]-}"; then
-		DOMAINS=()
+	if ! contains '--domains' "${opts[@]:-}"; then
+		domains=()
 		while IFS= read -r DOMAIN; do
-			DOMAINS+=("$DOMAIN")
+			domains+=("$DOMAIN")
 		done < <(jq -r '.domains // [] | .[]' <<<"$json")
 	fi
 }
 
 load_config() {
-	if [[ ! -f "$CONFIG" || ! -r "$CONFIG" ]]; then
+	if [[ ! -f "$config" || ! -r "$config" ]]; then
 		return 0
 	fi
 
-	if ! jq empty "$CONFIG" >/dev/null 2>&1; then
-		echo "Error: invalid configuration file '$CONFIG'" >&2
+	if ! jq empty "$config" >/dev/null 2>&1; then
+		echo "Error: invalid configuration file '$config'" >&2
 		exit 1
 	fi
 
-	parse_config "$(jq -cM '. | del(.profiles)' "$CONFIG")"
+	parse_config "$(jq -cM '. | del(.profiles)' "$config")"
 
-	if [[ -n "$PROFILE" ]]; then
-		local profile
-		profile=$(jq -cM ".profiles.$PROFILE // empty" "$CONFIG")
+	if [[ -n "$profile" ]]; then
+		local profile_config
+		profile_config=$(jq -cM ".profiles.$profile // empty" "$config")
 
-		if [[ -z "$profile" ]]; then
-			echo "Error: profile '$PROFILE' not found in configuration file '$CONFIG'" >&2
+		if [[ -z "$profile_config" ]]; then
+			echo "Error: profile '$profile' not found in configuration file '$config'" >&2
 			exit 1
 		fi
 
-		parse_config "$profile"
+		parse_config "$profile_config"
 	fi
 }
 
 ssh_cmd() {
-	echo "ssh -fNT -o ServerAliveInterval=$KEEP_ALIVE_INTERVAL -o ServerAliveCountMax=$KEEP_ALIVE_COUNT -D $SOCKS_PORT $SSH_HOST"
+	echo "ssh -fNT -o ServerAliveInterval=$keep_alive_interval -o ServerAliveCountMax=$keep_alive_count -D $socks_port $ssh_host"
 }
 
 create_ssh_tunnel() {
-	if [[ -z "$SSH_HOST" ]]; then
+	if [[ -z "$ssh_host" ]]; then
 		echo "Error: missing SSH host" >&2
 		echo "Try '$0 --help' for more information" >&2
 		exit 1
@@ -230,7 +230,7 @@ destroy_ssh_tunnel() {
 	cmd="$(ssh_cmd)"
 
 	if pgrep -qf "$cmd"; then
-		echo "[−] Killing SSH SOCKS tunnel on port $SOCKS_PORT..."
+		echo "[−] Killing SSH SOCKS tunnel on port $socks_port..."
 		pkill -f "$cmd"
 	else
 		echo "[✓] SSH SOCKS proxy already stopped."
@@ -238,7 +238,7 @@ destroy_ssh_tunnel() {
 }
 
 tun2socks_cmd() {
-	echo "nohup tun2socks -device $INTERFACE_NAME"
+	echo "nohup tun2socks -device $interface_name"
 }
 
 create_tun() {
@@ -248,10 +248,10 @@ create_tun() {
 	if ! pgrep -qf "$cmd"; then
 		echo "[+] Starting tun2socks..."
 		sudo nohup tun2socks \
-			-device "$INTERFACE_NAME" \
-			-proxy "socks5://127.0.0.1:$SOCKS_PORT" \
-			-tun-post-up "ifconfig $INTERFACE_NAME $INTERFACE_IP $INTERFACE_IP up" 2>&1 |
-			tee -a "$LOG_FILE" >/dev/null &
+			-device "$interface_name" \
+			-proxy "socks5://127.0.0.1:$socks_port" \
+			-tun-post-up "ifconfig $interface_name $interface_ip $interface_ip up" 2>&1 |
+			tee -a "$log_file" >/dev/null &
 		sleep 1
 	else
 		echo "[✓] tun2socks already running."
@@ -259,11 +259,11 @@ create_tun() {
 }
 
 destroy_tun() {
-	if ifconfig "$INTERFACE_NAME" &>/dev/null; then
-		echo "[−] Shutting down TUN interface $INTERFACE_NAME..."
-		sudo ifconfig "$INTERFACE_NAME" down
+	if ifconfig "$interface_name" &>/dev/null; then
+		echo "[−] Shutting down TUN interface $interface_name..."
+		sudo ifconfig "$interface_name" down
 	else
-		echo "[✓] TUN interface $INTERFACE_NAME already removed."
+		echo "[✓] TUN interface $interface_name already removed."
 	fi
 
 	local cmd
@@ -286,16 +286,16 @@ add_host() {
 }
 
 map_domains() {
-	if [[ "${#DOMAINS[@]}" -eq 0 ]]; then
+	if [[ "${#domains[@]}" -eq 0 ]]; then
 		echo "Warning: domains is empty. Nothing to map."
 		return 0
 	fi
 
-	for DOMAIN in "${DOMAINS[@]}"; do
+	for DOMAIN in "${domains[@]}"; do
 		echo "[*] Resolving $DOMAIN via SSH host..."
 
 		# shellcheck disable=SC2029
-		IP=$(ssh -n "$SSH_HOST" getent hosts "$DOMAIN" | awk '{ print $1 }' | head -n1)
+		IP=$(ssh -n "$ssh_host" getent hosts "$DOMAIN" | awk '{ print $1 }' | head -n1)
 
 		if [[ -z "$IP" ]]; then
 			echo "[!] Could not resolve $DOMAIN via SSH — skipping"
@@ -307,8 +307,8 @@ map_domains() {
 		if netstat -rn | grep -q -F "$IP/32"; then
 			echo "[✓] Route for $IP already exists."
 		else
-			echo "[+] Adding route for $IP via $INTERFACE_IP..."
-			sudo route -n add -net "$IP/32" "$INTERFACE_IP"
+			echo "[+] Adding route for $IP via $interface_ip..."
+			sudo route -n add -net "$IP/32" "$interface_ip"
 		fi
 
 		echo "[+] Updating /etc/hosts with $IP $DOMAIN..."
@@ -323,12 +323,12 @@ remove_host() {
 }
 
 unmap_domains() {
-	if [[ "${#DOMAINS[@]}" -eq 0 ]]; then
+	if [[ "${#domains[@]}" -eq 0 ]]; then
 		echo "Warning: domains is empty. Nothing to unmap."
 		return 0
 	fi
 
-	for DOMAIN in "${DOMAINS[@]}"; do
+	for DOMAIN in "${domains[@]}"; do
 		echo "[*] Looking for $DOMAIN in /etc/hosts..."
 
 		IP=$(grep -v '^#' /etc/hosts | grep -F "$DOMAIN" | awk '{print $1}')
@@ -339,7 +339,7 @@ unmap_domains() {
 		fi
 
 		echo "[−] Removing route for $IP..."
-		sudo route -n delete -net "$IP/32" "$INTERFACE_IP"
+		sudo route -n delete -net "$IP/32" "$interface_ip"
 
 		echo "[-] Removing $DOMAIN from /etc/hosts..."
 		remove_host "$DOMAIN"
@@ -364,7 +364,7 @@ main() {
 	parse_args "$@"
 	load_config
 
-	case "$ACTION" in
+	case "$action" in
 	start)
 		start
 		;;
