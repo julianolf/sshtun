@@ -3,6 +3,7 @@
 set -euo pipefail
 
 config="$HOME/.config/sshacky/config.json"
+pid_dir="$HOME/.cache/sshacky"
 domains=()
 interface_ip="198.18.0.1"
 interface_name="utun123"
@@ -196,8 +197,46 @@ load_config() {
 	fi
 }
 
-ssh_cmd() {
-	echo "ssh -fNT -o ServerAliveInterval=$keep_alive_interval -o ServerAliveCountMax=$keep_alive_count -D $socks_port $ssh_host"
+save_pid() {
+	local pid
+	local key="$1"
+	local cmd="$2"
+	local dir="$pid_dir/${profile:-default}"
+	local file="$dir/pids"
+
+	pid=$(pgrep -f "$cmd")
+
+	mkdir -p "$dir"
+	touch "$file"
+	sed -i '' "/^${key}=/d" "$file"
+	echo "$key=$pid" >>"$file"
+}
+
+delete_pids() {
+	local file="$pid_dir/${profile:-default}/pids"
+
+	if [[ -f "$file" ]]; then
+		rm "$file"
+	fi
+}
+
+get_pid() {
+	local key="$1"
+	local file="$pid_dir/${profile:-default}/pids"
+
+	if [[ -f "$file" ]]; then
+		awk -F= -v k="$key" '$1 == k { print $2 }' "$file"
+	fi
+}
+
+is_running() {
+	local pid="$1"
+
+	if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ ]]; then
+		return 1
+	fi
+
+	sudo kill -0 "$pid" 2>/dev/null
 }
 
 create_ssh_tunnel() {
@@ -208,53 +247,64 @@ create_ssh_tunnel() {
 
 	fi
 
-	local cmd
-	cmd="$(ssh_cmd)"
+	local program_name="ssh"
+	local pid
 
-	if ! pgrep -qf "$cmd"; then
-		echo "[+] Starting SSH SOCKS5 proxy..."
-		if eval "$cmd"; then
-			echo "[✓] SSH SOCKS5 proxy started."
-			sleep 1
-		else
-			echo "[-] Failed to start SSH SOCKS5 proxy." >&2
-			exit 1
-		fi
+	pid=$(get_pid "$program_name")
+
+	if is_running "$pid"; then
+		echo "[✓] SSH SOCKS tunnel already running."
 	else
-		echo "[✓] SSH SOCKS proxy already running."
+		echo "[+] Starting SSH SOCKS tunnel on port $socks_port..."
+
+		ssh -fNT \
+			-o ServerAliveInterval="$keep_alive_interval" \
+			-o ServerAliveCountMax="$keep_alive_count" \
+			-D "$socks_port" \
+			"$ssh_host"
+
+		sleep 1
+
+		local cmd="ssh -fNT .* -D $socks_port $ssh_host"
+		save_pid "$program_name" "$cmd"
 	fi
 }
 
 destroy_ssh_tunnel() {
-	local cmd
-	cmd="$(ssh_cmd)"
+	local program_name="ssh"
+	local pid
 
-	if pgrep -qf "$cmd"; then
+	pid=$(get_pid "$program_name")
+
+	if is_running "$pid"; then
 		echo "[−] Killing SSH SOCKS tunnel on port $socks_port..."
-		pkill -f "$cmd"
+		kill "$pid"
 	else
-		echo "[✓] SSH SOCKS proxy already stopped."
+		echo "[✓] SSH SOCKS tunnel already stopped."
 	fi
 }
 
-tun2socks_cmd() {
-	echo "nohup tun2socks -device $interface_name"
-}
-
 create_tun() {
-	local cmd
-	cmd="$(tun2socks_cmd)"
+	local program_name="tun2socks"
+	local pid
 
-	if ! pgrep -qf "$cmd"; then
+	pid=$(get_pid "tun2socks")
+
+	if is_running "$pid"; then
+		echo "[✓] tun2socks already running."
+	else
 		echo "[+] Starting tun2socks..."
+
 		sudo nohup tun2socks \
 			-device "$interface_name" \
 			-proxy "socks5://127.0.0.1:$socks_port" \
 			-tun-post-up "ifconfig $interface_name $interface_ip $interface_ip up" 2>&1 |
 			tee -a "$log_file" >/dev/null &
+
 		sleep 1
-	else
-		echo "[✓] tun2socks already running."
+
+		local cmd="nohup tun2socks -device $interface_name"
+		save_pid "$program_name" "$cmd"
 	fi
 }
 
@@ -266,12 +316,14 @@ destroy_tun() {
 		echo "[✓] TUN interface $interface_name already removed."
 	fi
 
-	local cmd
-	cmd="$(tun2socks_cmd)"
+	local program_name="tun2socks"
+	local pid
 
-	if pgrep -qf "$cmd"; then
+	pid=$(get_pid "tun2socks")
+
+	if is_running "$pid"; then
 		echo "[−] Killing tun2socks process..."
-		pkill -f "$cmd"
+		sudo kill "$pid"
 	else
 		echo "[✓] tun2socks already stopped."
 	fi
@@ -369,6 +421,7 @@ stop() {
 	unmap_domains
 	destroy_tun
 	destroy_ssh_tunnel
+	delete_pids
 }
 
 main() {
