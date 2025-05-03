@@ -165,8 +165,8 @@ parse_config() {
 
 	if ! contains '--domains' "${opts[@]:-}"; then
 		domains=()
-		while IFS= read -r DOMAIN; do
-			domains+=("$DOMAIN")
+		while IFS= read -r domain; do
+			domains+=("$domain")
 		done < <(jq -r '.domains // [] | .[]' <<<"$json")
 	fi
 }
