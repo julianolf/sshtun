@@ -11,6 +11,7 @@ profile=""
 socks_port="1080"
 ssh_host=""
 show_help=0
+show_verbose=0
 show_version=0
 version="0.3.0"
 action=""
@@ -32,6 +33,7 @@ Usage: sshacky [options...] <start|stop|status>
  --profile              Profile from the configuration file to load
  --socks-port           Port for the SSH tunnel (default: 1080)
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
+ --verbose              Show detailed information about the running process
  --version              Show version and exit
 EOF
 }
@@ -146,6 +148,10 @@ parse_args() {
 			show_help=1
 			shift
 			;;
+		--verbose)
+			show_verbose=1
+			shift
+			;;
 		--version)
 			show_version=1
 			shift
@@ -188,6 +194,12 @@ parse_args() {
 		exit 1
 		;;
 	esac
+}
+
+log() {
+	if [[ "$show_verbose" -eq 1 ]]; then
+		echo "$1"
+	fi
 }
 
 contains() {
@@ -311,9 +323,9 @@ create_ssh_tunnel() {
 	pid=$(get_pid "$program_name")
 
 	if is_running "$pid"; then
-		echo "[✓] SSH SOCKS tunnel already running."
+		log "[✓] SSH SOCKS tunnel already running."
 	else
-		echo "[+] Starting SSH SOCKS tunnel on port $socks_port..."
+		log "[…] Starting SSH SOCKS tunnel on port $socks_port"
 
 		ssh -fNT \
 			-o ServerAliveInterval="$keep_alive_interval" \
@@ -335,10 +347,10 @@ destroy_ssh_tunnel() {
 	pid=$(get_pid "$program_name")
 
 	if is_running "$pid"; then
-		echo "[−] Killing SSH SOCKS tunnel on port $socks_port..."
+		log "[…] Killing SSH SOCKS tunnel on port $socks_port"
 		kill "$pid"
 	else
-		echo "[✓] SSH SOCKS tunnel already stopped."
+		log "[✓] SSH SOCKS tunnel already stopped."
 	fi
 }
 
@@ -349,9 +361,9 @@ create_tun() {
 	pid=$(get_pid "tun2socks")
 
 	if is_running "$pid"; then
-		echo "[✓] tun2socks already running."
+		log "[✓] tun2socks already running."
 	else
-		echo "[+] Starting tun2socks..."
+		log "[…] Starting tun2socks"
 
 		sudo nohup tun2socks \
 			-device "$interface_name" \
@@ -368,10 +380,10 @@ create_tun() {
 
 destroy_tun() {
 	if ifconfig "$interface_name" &>/dev/null; then
-		echo "[−] Shutting down TUN interface $interface_name..."
+		log "[…] Shutting down TUN interface $interface_name"
 		sudo ifconfig "$interface_name" down
 	else
-		echo "[✓] TUN interface $interface_name already removed."
+		log "[✓] TUN interface $interface_name already removed."
 	fi
 
 	local program_name="tun2socks"
@@ -380,10 +392,10 @@ destroy_tun() {
 	pid=$(get_pid "tun2socks")
 
 	if is_running "$pid"; then
-		echo "[−] Killing tun2socks process..."
+		log "[…] Killing tun2socks process"
 		sudo kill "$pid"
 	else
-		echo "[✓] tun2socks already stopped."
+		log "[✓] tun2socks already stopped."
 	fi
 }
 
@@ -403,11 +415,11 @@ add_host() {
 
 map_domains() {
 	if [[ "${#domains[@]}" -eq 0 ]]; then
-		echo "Warning: domains is empty. Nothing to map."
+		log "[!] Domains is empty. Nothing to map."
 		return 0
 	fi
 
-	echo "[*] Resolving domains via SSH host..."
+	log "[…] Resolving domains via SSH host"
 
 	local dns_table
 	dns_table=$(printf "%s\n" "${domains[@]}" | ssh "$ssh_host" 'xargs -I{} sh -c '"'"'getent hosts {} | awk "{print \$1 \"\t\" \"{}\"}"'"'"'')
@@ -421,48 +433,46 @@ map_domains() {
 
 		resolved_names+="$domain"$'\n'
 
-		echo "[+] $domain resolves to $ip"
-
 		if netstat -rn | grep -q -F "$ip/32"; then
-			echo "[✓] Route for $ip already exists."
+			log "[✓] Route for $ip already exists."
 		else
-			echo "[+] Adding route for $ip via $interface_ip..."
-			sudo route -n add -net "$ip/32" "$interface_ip"
+			log "[…] Adding route for $ip via $interface_ip"
+			sudo route -n add -net "$ip/32" "$interface_ip" >/dev/null
 		fi
 
-		echo "[+] Updating /etc/hosts with $ip $domain..."
+		log "[…] Updating /etc/hosts with $ip $domain"
 		add_host "$ip" "$domain"
 
 	done <<<"$dns_table"
 
 	for domain in "${domains[@]}"; do
 		if ! grep -qxF "$domain" <<<"${resolved_names[@]}"; then
-			echo "[!] Could not resolve $domain via SSH"
+			log "[✗] Could not resolve $domain via SSH"
 		fi
 	done
 }
 
 unmap_domains() {
 	if [[ "${#domains[@]}" -eq 0 ]]; then
-		echo "Warning: domains is empty. Nothing to unmap."
+		log "[!] Domains is empty. Nothing to unmap."
 		return 0
 	fi
 
 	for domain in "${domains[@]}"; do
-		echo "[*] Looking for $domain in /etc/hosts..."
+		log "[…] Looking for $domain in /etc/hosts"
 
 		local ip
 		ip=$(grep -v '^#' /etc/hosts | grep -F "$domain" | awk '{print $1}')
 
 		if [[ -z "$ip" ]]; then
-			echo "[!] Could not find $domain — skipping"
+			log "[!] Could not find $domain"
 			continue
 		fi
 
-		echo "[−] Removing route for $ip..."
-		sudo route -n delete -net "$ip/32" "$interface_ip"
+		log "[…] Removing route for $ip"
+		sudo route -n delete -net "$ip/32" "$interface_ip" >/dev/null
 
-		echo "[-] Removing $domain from /etc/hosts..."
+		log "[…] Removing $domain from /etc/hosts"
 		remove_host "$domain"
 	done
 }
