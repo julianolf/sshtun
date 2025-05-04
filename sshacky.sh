@@ -60,7 +60,7 @@ print_status() {
 		local profile_name
 		profile_name="$(basename "$subdir")"
 
-		if ((${#profile_name} > colsize)); then
+		if [[ "${#profile_name}" -gt colsize ]]; then
 			colsize=${#profile_name}
 		fi
 
@@ -89,7 +89,7 @@ print_status() {
 		lines+=("$profile_name|$ssh_status|$tun_status")
 	done < <(find "$pid_dir" -mindepth 1 -maxdepth 1 -type d)
 
-	if ((${#lines[@]} > 0)); then
+	if [[ "${#lines[@]}" -gt 0 ]]; then
 		printf "%-${colsize}s %-12s %-12s\n" "PROFILE" "SSH" "TUN"
 
 		for line in "${lines[@]}"; do
