@@ -2,7 +2,12 @@
 
 ![CI](https://github.com/julianolf/sshacky/actions/workflows/ci.yml/badge.svg?event=push)
 
-Configure network traffic routing over SSH using SOCKS5.
+Configure network traffic over SSH using SOCKS5.
+
+If you have SSH access to a Linux machine, you can use it as a proxy to reach private networks or the internet.
+The image below illustrates how it works and what can be achieved:
+
+![Diagram](diagram.png "Diagram")
 
 ### Platforms
 
@@ -26,9 +31,9 @@ sudo curl \
 ## Usage
 
 ```sh
-Usage: sshacky [options...] <start|stop>
+Usage: sshacky [options...] <start|stop|status>
 
- --config               Configuration file (default: ~/.config/sshacky/config.json)
+ --config               Configuration file (default: ~/.config/sshacky/config.cfg)
  --domains              Comma-separated list of domains (e.g., one.com,two.com)
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
@@ -36,6 +41,7 @@ Usage: sshacky [options...] <start|stop>
  --profile              Profile from the configuration file to load
  --socks-port           Port for the SSH tunnel (default: 1080)
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
+ --verbose              Show detailed information about the running process
  --version              Show version and exit
 ```
 
@@ -56,13 +62,13 @@ Example:
     "two.com"
   ],
   "profiles": {
-    "test": {
+    "private_net": {
       "interface_ip": "198.18.0.2",
       "interface_name": "utun321",
       "socks_port": 1088,
-      "ssh_host": "user@192.168.0.1",
+      "ssh_host": "-J user@jumpbox user@bastion",
       "domains": [
-        "three.com"
+        "internal.host"
       ]
     }
   }
