@@ -22,7 +22,7 @@ args=()
 
 print_usage() {
 	cat <<EOF
-Usage: sshacky [options...] <start|stop>
+Usage: sshacky [options...] <start|stop|status>
 
  --config               Configuration file (default: ~/.config/sshacky/config.cfg)
  --domains              Comma-separated list of domains (e.g., one.com,two.com)
@@ -38,6 +38,64 @@ EOF
 
 print_version() {
 	echo "sshacky v$version"
+}
+
+print_status() {
+	if [[ ! -d "$pid_dir" ]]; then
+		return 0
+	fi
+
+	local lines=()
+	local colsize=12
+
+	while read -r subdir; do
+		local file="$subdir/pids"
+
+		if [[ ! -s "$file" ]]; then
+			continue
+		fi
+
+		local profile_name
+		profile_name="$(basename "$subdir")"
+
+		if ((${#profile_name} > colsize)); then
+			colsize=${#profile_name}
+		fi
+
+		local ssh_status="[…] unknown"
+		local tun_status="[…] unknown"
+
+		while IFS='=' read -r program_name pid; do
+			local stat
+			if is_running "$pid"; then
+				stat="[✓] running"
+			else
+				stat="[✗] stopped"
+			fi
+
+			case "$program_name" in
+			ssh)
+				ssh_status="$stat"
+				;;
+			tun2socks)
+				tun_status="$stat"
+				;;
+			*) ;;
+			esac
+		done <"$file"
+
+		lines+=("$profile_name|$ssh_status|$tun_status")
+	done < <(find "$pid_dir" -mindepth 1 -maxdepth 1 -type d)
+
+	if ((${#lines[@]} > 0)); then
+		printf "%-${colsize}s %-12s %-12s\n" "PROFILE" "SSH" "TUN"
+
+		for line in "${lines[@]}"; do
+			IFS='|' read -r profile_name ssh_status tun_status <<<"$line"
+
+			printf "%-${colsize}s %-14s %-14s\n" "$profile_name" "$ssh_status" "$tun_status"
+		done
+	fi
 }
 
 parse_args() {
@@ -123,7 +181,7 @@ parse_args() {
 	action="${args[0]}"
 
 	case "$action" in
-	start | stop) ;;
+	start | stop | status) ;;
 	*)
 		echo "Error: invalid action '$action'" >&2
 		echo "Try '$0 --help' for more information" >&2
@@ -424,6 +482,11 @@ stop() {
 	delete_pids
 }
 
+status() {
+	sudo -v
+	print_status
+}
+
 main() {
 	parse_args "$@"
 	load_config
@@ -434,6 +497,9 @@ main() {
 		;;
 	stop)
 		stop
+		;;
+	status)
+		status
 		;;
 	*)
 		echo "Error: invalid action" >&2
