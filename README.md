@@ -1,11 +1,11 @@
-# sshacky
+# sshtun
 
-![CI](https://github.com/julianolf/sshacky/actions/workflows/ci.yml/badge.svg?event=push)
+![CI](https://github.com/julianolf/sshtun/actions/workflows/ci.yml/badge.svg?event=push)
 
 Configure network traffic over SSH using SOCKS5.
 
 If you have SSH access to a Linux machine, you can use it as a proxy to reach private networks or the internet.
-The image below illustrates how it works and what can be achieved:
+The image below is based in the configuration example and illustrates how sshtun works and what can be achieved:
 
 ![Diagram](diagram.png "Diagram")
 
@@ -23,17 +23,17 @@ The image below illustrates how it works and what can be achieved:
 ```sh
 sudo curl \
     -sSfL \
-    --output /usr/local/bin/sshacky \
-    https://raw.githubusercontent.com/julianolf/sshacky/refs/heads/main/sshacky.sh &&
-    sudo chmod +x /usr/local/bin/sshacky
+    --output /usr/local/bin/sshtun \
+    https://raw.githubusercontent.com/julianolf/sshtun/refs/heads/main/sshtun.sh &&
+    sudo chmod +x /usr/local/bin/sshtun
 ```
 
 ## Usage
 
 ```sh
-Usage: sshacky [options...] <start|stop|status>
+Usage: sshtun [options...] <start|stop|status>
 
- --config               Configuration file (default: ~/.config/sshacky/config.cfg)
+ --config               Configuration file (default: ~/.config/sshtun/config.cfg)
  --domains              Comma-separated list of domains (e.g., one.com,two.com)
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)

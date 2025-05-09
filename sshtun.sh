@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-config="$HOME/.config/sshacky/config.json"
-pid_dir="$HOME/.cache/sshacky"
+config="$HOME/.config/sshtun/config.json"
+pid_dir="$HOME/.cache/sshtun"
 domains=()
 interface_ip="198.18.0.1"
 interface_name="utun123"
@@ -15,7 +15,7 @@ show_verbose=0
 show_version=0
 version="0.4.0"
 action=""
-log_file="/tmp/sshacky-$(date "+%Y%m%d").log"
+log_file="/tmp/sshtun-$(date "+%Y%m%d").log"
 keep_alive_interval=30
 keep_alive_count=3
 opts=()
@@ -23,9 +23,9 @@ args=()
 
 print_usage() {
 	cat <<EOF
-Usage: sshacky [options...] <start|stop|status>
+Usage: sshtun [options...] <start|stop|status>
 
- --config               Configuration file (default: ~/.config/sshacky/config.cfg)
+ --config               Configuration file (default: ~/.config/sshtun/config.cfg)
  --domains              Comma-separated list of domains (e.g., one.com,two.com)
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
@@ -39,7 +39,7 @@ EOF
 }
 
 print_version() {
-	echo "sshacky v$version"
+	echo "sshtun v$version"
 }
 
 print_status() {
