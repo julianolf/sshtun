@@ -6,4 +6,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install shellcheck
-      - run: shellcheck --shell=bash --severity=warning sshacky.sh
+      - run: shellcheck --shell=bash --severity=warning sshtun.sh
