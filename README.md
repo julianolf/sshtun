@@ -39,6 +39,8 @@ Usage: sshtun [options...] <start|stop|status>
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
  --interface-name       TUN interface name (default: utun123)
  --profile              Profile from the configuration file to load
+ --edit-config          Edit configuration file
+ --show-config          Show configuration and exit
  --socks-port           Port for the SSH tunnel (default: 1080)
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
  --verbose              Show detailed information about the running process
