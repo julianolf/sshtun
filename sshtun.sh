@@ -10,6 +10,7 @@ interface_name="utun123"
 profile=""
 socks_port="1080"
 ssh_host=""
+show_config=0
 show_help=0
 show_verbose=0
 show_version=0
@@ -31,6 +32,7 @@ Usage: sshtun [options...] <start|stop|status>
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
  --interface-name       TUN interface name (default: utun123)
  --profile              Profile from the configuration file to load
+ --show-config          Show configuration and exit
  --socks-port           Port for the SSH tunnel (default: 1080)
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
  --verbose              Show detailed information about the running process
@@ -40,6 +42,12 @@ EOF
 
 print_version() {
 	echo "sshtun v$version"
+}
+
+print_config() {
+	if [[ -f "$config" ]]; then
+		jq '.' "$config"
+	fi
 }
 
 print_status() {
@@ -134,6 +142,10 @@ parse_args() {
 			profile="$2"
 			shift 2
 			;;
+		--show-config)
+			show_config=1
+			shift
+			;;
 		--socks-port)
 			opts+=("$1")
 			socks_port="$2"
@@ -167,6 +179,10 @@ parse_args() {
 			;;
 		esac
 	done
+
+	if [[ "$show_config" -eq 1 ]]; then
+		print_config && exit 0 || exit 1
+	fi
 
 	if [[ "$show_help" -eq 1 ]]; then
 		print_usage
