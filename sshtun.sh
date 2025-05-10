@@ -10,6 +10,7 @@ interface_name="utun123"
 profile=""
 socks_port="1080"
 ssh_host=""
+edit_config=0
 show_config=0
 show_help=0
 show_verbose=0
@@ -32,6 +33,7 @@ Usage: sshtun [options...] <start|stop|status>
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
  --interface-name       TUN interface name (default: utun123)
  --profile              Profile from the configuration file to load
+ --edit-config          Edit configuration file
  --show-config          Show configuration and exit
  --socks-port           Port for the SSH tunnel (default: 1080)
  --ssh-host             User and host to create the SSH tunnel (e.g., user@jumpbox)
@@ -108,6 +110,47 @@ print_status() {
 	fi
 }
 
+open_config() {
+	local preferred="${EDITOR:-${VISUAL:-}}"
+	local fallbacks=(nvim vim vi nano)
+	local editor
+
+	if command -v "$preferred" >/dev/null 2>&1; then
+		editor="$preferred"
+	else
+		for fallback in "${fallbacks[@]}"; do
+			if command -v "$fallback" >/dev/null 2>&1; then
+				editor="$fallback"
+				break
+			fi
+		done
+	fi
+
+	if [[ -z "$editor" ]]; then
+		echo "No suitable text editor found. Set the EDITOR or VISUAL environment variable with your preferred editor."
+		return 1
+	fi
+
+	if [[ ! -f "$config" ]]; then
+		echo "Configuration file $config not found."
+
+		local answer
+		read -r -p "Would you like to create it? [Y/n]: " answer
+
+		case "$answer" in
+		[yY])
+			printf "{\n}\n" >"$config"
+			;;
+		*)
+			return 1
+			;;
+		esac
+	fi
+
+	"$editor" "$config"
+
+}
+
 parse_args() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
@@ -141,6 +184,10 @@ parse_args() {
 		--profile)
 			profile="$2"
 			shift 2
+			;;
+		--edit-config)
+			edit_config=1
+			shift
 			;;
 		--show-config)
 			show_config=1
@@ -179,6 +226,10 @@ parse_args() {
 			;;
 		esac
 	done
+
+	if [[ "$edit_config" -eq 1 ]]; then
+		open_config && exit 0 || exit 1
+	fi
 
 	if [[ "$show_config" -eq 1 ]]; then
 		print_config && exit 0 || exit 1
