@@ -11,6 +11,7 @@ The image below is based in the configuration example and illustrates how sshtun
 
 ### Platforms
 
+- Linux
 - macOS
 
 ### Requirements
