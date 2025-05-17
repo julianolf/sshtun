@@ -22,11 +22,7 @@ The image below is based in the configuration example and illustrates how sshtun
 ## Installation
 
 ```sh
-sudo curl \
-    -sSfL \
-    --output /usr/local/bin/sshtun \
-    https://raw.githubusercontent.com/julianolf/sshtun/refs/heads/main/sshtun.sh &&
-    sudo chmod +x /usr/local/bin/sshtun
+curl -sSfL https://raw.githubusercontent.com/julianolf/sshtun/main/install.sh | bash
 ```
 
 ## Usage
