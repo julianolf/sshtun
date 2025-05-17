@@ -6,7 +6,6 @@ config="$HOME/.config/sshtun/config.json"
 pid_dir="$HOME/.cache/sshtun"
 domains=()
 interface_ip="198.18.0.1"
-interface_name="utun123"
 profile=""
 socks_port="1080"
 ssh_host=""
@@ -22,6 +21,23 @@ keep_alive_interval=30
 keep_alive_count=3
 opts=()
 args=()
+os="$(uname)"
+
+if [[ "$os" == Darwin ]]; then
+	interface_name='utun123'
+	sed_i=("sed" "-i" "")
+	start_tun='create_tun_mac'
+	stop_tun='destroy_tun_mac'
+	add_route='add_route_mac'
+	del_route='del_route_mac'
+else
+	interface_name='tun0'
+	sed_i=("sed" "-i")
+	start_tun='create_tun_linux'
+	stop_tun='destroy_tun_linux'
+	add_route='add_route_linux'
+	del_route='del_route_linux'
+fi
 
 print_usage() {
 	cat <<EOF
@@ -31,7 +47,7 @@ Usage: sshtun [options...] <start|stop|status>
  --domains              Comma-separated list of domains (e.g., one.com,two.com)
  --help                 Show usage and exit
  --interface-ip         IP address for the TUN interface (default: 198.18.0.1)
- --interface-name       TUN interface name (default: utun123)
+ --interface-name       TUN interface name (default: $interface_name)
  --profile              Profile from the configuration file to load
  --edit-config          Edit configuration file
  --show-config          Show configuration and exit
@@ -104,7 +120,6 @@ print_status() {
 
 		for line in "${lines[@]}"; do
 			IFS='|' read -r profile_name ssh_status tun_status <<<"$line"
-
 			printf "%-${colsize}s %-14s %-14s\n" "$profile_name" "$ssh_status" "$tun_status"
 		done
 	fi
@@ -133,12 +148,12 @@ open_config() {
 
 	if [[ ! -f "$config" ]]; then
 		echo "Configuration file $config not found."
-
 		local answer
 		read -r -p "Would you like to create it? [Y/n]: " answer
 
 		case "$answer" in
 		[yY])
+			mkdir -p "$(dirname "$config")"
 			printf "{\n}\n" >"$config"
 			;;
 		*)
@@ -148,7 +163,6 @@ open_config() {
 	fi
 
 	"$editor" "$config"
-
 }
 
 parse_args() {
@@ -341,11 +355,10 @@ save_pid() {
 	local dir="$pid_dir/${profile:-default}"
 	local file="$dir/pids"
 
-	pid=$(pgrep -f "$cmd")
-
+	pid=$(pgrep -f "$cmd" | head -n1)
 	mkdir -p "$dir"
 	touch "$file"
-	sed -i '' "/^${key}=/d" "$file"
+	"${sed_i[@]}" "/^${key}=/d" "$file"
 	echo "$key=$pid" >>"$file"
 }
 
@@ -386,20 +399,17 @@ create_ssh_tunnel() {
 
 	local program_name="ssh"
 	local pid
-
 	pid=$(get_pid "$program_name")
 
 	if is_running "$pid"; then
 		log "[✓] SSH SOCKS tunnel already running."
 	else
 		log "[…] Starting SSH SOCKS tunnel on port $socks_port"
-
 		ssh -fNT \
 			-o ServerAliveInterval="$keep_alive_interval" \
 			-o ServerAliveCountMax="$keep_alive_count" \
 			-D "$socks_port" \
 			"$ssh_host"
-
 		sleep 1
 
 		local cmd="ssh -fNT .* -D $socks_port $ssh_host"
@@ -410,7 +420,6 @@ create_ssh_tunnel() {
 destroy_ssh_tunnel() {
 	local program_name="ssh"
 	local pid
-
 	pid=$(get_pid "$program_name")
 
 	if is_running "$pid"; then
@@ -421,23 +430,38 @@ destroy_ssh_tunnel() {
 	fi
 }
 
+create_tun_mac() {
+	sudo nohup tun2socks \
+		-device "$interface_name" \
+		-proxy "socks5://127.0.0.1:$socks_port" \
+		-tun-post-up "ifconfig $interface_name $interface_ip $interface_ip up" 2>&1 |
+		tee -a "$log_file" >/dev/null &
+}
+
+create_tun_interface_linux() {
+	sudo ip tuntap add mode tun dev "$interface_name"
+	sudo ip addr add "$interface_ip" dev "$interface_name"
+	sudo ip link set dev "$interface_name" up
+}
+
+create_tun_linux() {
+	create_tun_interface_linux
+	sudo nohup tun2socks \
+		-device "$interface_name" \
+		-proxy "socks5://127.0.0.1:$socks_port" |
+		tee -a "$log_file" >/dev/null &
+}
+
 create_tun() {
 	local program_name="tun2socks"
 	local pid
-
 	pid=$(get_pid "tun2socks")
 
 	if is_running "$pid"; then
 		log "[✓] tun2socks already running."
 	else
 		log "[…] Starting tun2socks"
-
-		sudo nohup tun2socks \
-			-device "$interface_name" \
-			-proxy "socks5://127.0.0.1:$socks_port" \
-			-tun-post-up "ifconfig $interface_name $interface_ip $interface_ip up" 2>&1 |
-			tee -a "$log_file" >/dev/null &
-
+		"$start_tun"
 		sleep 1
 
 		local cmd="nohup tun2socks -device $interface_name"
@@ -445,22 +469,31 @@ create_tun() {
 	fi
 }
 
-destroy_tun() {
-	if ifconfig "$interface_name" &>/dev/null; then
-		log "[…] Shutting down TUN interface $interface_name"
-		sudo ifconfig "$interface_name" down
+destroy_tun_mac() {
+	local pid="$1"
+	sudo kill "$pid"
+}
+
+destroy_tun_linux() {
+	local pid="$1"
+	sudo kill "$pid"
+
+	if ip link show "$interface_name" &>/dev/null; then
+		log "[…] Deleting TUN interface $interface_name"
+		sudo ip tuntap del mode tun dev "$interface_name"
 	else
 		log "[✓] TUN interface $interface_name already removed."
 	fi
+}
 
+destroy_tun() {
 	local program_name="tun2socks"
 	local pid
-
-	pid=$(get_pid "tun2socks")
+	pid=$(get_pid "$program_name")
 
 	if is_running "$pid"; then
 		log "[…] Killing tun2socks process"
-		sudo kill "$pid"
+		"$stop_tun" "$pid"
 	else
 		log "[✓] tun2socks already stopped."
 	fi
@@ -468,16 +501,36 @@ destroy_tun() {
 
 remove_host() {
 	local domain="$1"
-
-	sudo sed -i '' "/[[:space:]]$domain$/d" /etc/hosts
+	sudo "${sed_i[@]}" "/[[:space:]]$domain$/d" /etc/hosts
 }
 
 add_host() {
 	local ip="$1"
 	local domain="$2"
-
 	remove_host "$domain"
 	printf "%s\t%s\n" "$ip" "$domain" | sudo tee -a /etc/hosts >/dev/null
+}
+
+add_route_mac() {
+	local ip="$1"
+
+	if netstat -rn | grep -q -F "$ip/32"; then
+		log "[✓] Route for $ip already exists."
+	else
+		log "[…] Adding route for $ip via $interface_ip"
+		sudo route -n add -net "$ip" "$interface_ip" >/dev/null
+	fi
+}
+
+add_route_linux() {
+	local ip="$1"
+
+	if ip route show | grep -q -F "'$ip '"; then
+		log "[✓] Route for $ip already exists."
+	else
+		log "[…] Adding route for $ip via $interface_ip"
+		sudo ip route add "$ip" via "$interface_ip" dev "$interface_name"
+	fi
 }
 
 map_domains() {
@@ -487,29 +540,19 @@ map_domains() {
 	fi
 
 	log "[…] Resolving domains via SSH host"
-
 	local dns_table
 	dns_table=$(printf "%s\n" "${domains[@]}" | ssh "$ssh_host" 'xargs -I{} sh -c '"'"'getent hosts {} | awk "{print \$1 \"\t\" \"{}\"}"'"'"'')
-
 	local resolved_names=""
 
 	while IFS= read -r line; do
-
 		local ip=${line%%$'\t'*}
 		local domain=${line#*$'\t'}
 
 		resolved_names+="$domain"$'\n'
-
-		if netstat -rn | grep -q -F "$ip/32"; then
-			log "[✓] Route for $ip already exists."
-		else
-			log "[…] Adding route for $ip via $interface_ip"
-			sudo route -n add -net "$ip/32" "$interface_ip" >/dev/null
-		fi
+		"$add_route" "$ip"
 
 		log "[…] Updating /etc/hosts with $ip $domain"
 		add_host "$ip" "$domain"
-
 	done <<<"$dns_table"
 
 	for domain in "${domains[@]}"; do
@@ -517,6 +560,16 @@ map_domains() {
 			log "[✗] Could not resolve $domain via SSH"
 		fi
 	done
+}
+
+del_route_mac() {
+	local ip="$1"
+	sudo route -n delete -net "$ip" "$interface_ip" >/dev/null
+}
+
+del_route_linux() {
+	local ip="$1"
+	sudo ip route del "$ip" via "$interface_ip" dev "$interface_name"
 }
 
 unmap_domains() {
@@ -537,7 +590,7 @@ unmap_domains() {
 		fi
 
 		log "[…] Removing route for $ip"
-		sudo route -n delete -net "$ip/32" "$interface_ip" >/dev/null
+		"$del_route" "$ip"
 
 		log "[…] Removing $domain from /etc/hosts"
 		remove_host "$domain"
