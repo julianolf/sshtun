@@ -4,5 +4,5 @@ jobs:
   CI:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - run: shellcheck --shell=bash --severity=warning install.sh sshtun.sh
